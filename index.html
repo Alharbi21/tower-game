@@ -98,6 +98,9 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
 .install svg{width:14px;height:14px;flex:none}
 .scrim{background:var(--scrim);align-items:center}
 .overlay.low{align-items:flex-end}
+#resumeRow{justify-content:space-between;font-size:.9rem}
+#resumeRow p{font-weight:600}
+#resumeRow .link{padding:5px 12px;font-size:.82rem}
 .credit{margin:0;text-align:center;font-size:.8rem;line-height:1.4;color:var(--muted)}
 .credit a{color:inherit;text-decoration:underline;text-underline-offset:3px;margin-inline-start:6px}
 .credit a:hover{color:var(--fg)}
@@ -110,8 +113,8 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
 <div class="app" dir="rtl" lang="ar">
   <header class="hud">
     <h1>برج التوازن</h1>
-    <div class="stat"><span class="lbl">المرحلة</span><span class="num" id="stageNum">1</span></div>
-    <div class="stat"><span class="lbl">الطوب</span><span class="num" id="height" dir="ltr">0/15</span></div>
+    <div class="stat"><span class="lbl">المرحلة</span><span class="num" id="stageNum" dir="ltr">1/30</span></div>
+    <div class="stat"><span class="lbl">الطوب</span><span class="num" id="height" dir="ltr">0/10</span></div>
     <div class="stat"><span class="lbl">أعلى رقم</span><span class="num" id="best">0</span></div>
     <button class="quiet" id="sound" type="button" aria-pressed="true">الصوت شغّال</button>
     <button class="quiet install" id="installBtn" type="button" hidden><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M2.5 13.5h11"/></svg>ثبّت اللعبة</button>
@@ -138,11 +141,15 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
         </div>
         <ol>
           <li>الطوبة تتحرك يمين ويسار. اضغط الشاشة أو زر المسافة عشان تنزّلها.</li>
-          <li>خلّها فوق اللي تحتها. إذا مال البرج، عدّله بطوبة من الجهة الثانية.</li>
-          <li>الرقم اللي فوق الطوبة هو حركاتها الباقية. إذا خلصت قبل تنزّلها، تطيح وتنتهي اللعبة.</li>
-          <li>اللعبة مراحل: الأولى 15 طوبة، وبعدها 25، وتزيد لين 150. آخر طوبة في كل مرحلة هرم أو قبة تقفل البرج، وبعدها تبدأ برج جديد.</li>
-          <li id="rule3">حاول تقفل أكثر عدد من المراحل.</li>
+          <li>خلّها فوق اللي تحتها، وإذا مال البرج عدّله من الجهة الثانية.</li>
+          <li>الرقم اللي فوق الطوبة حركاتها الباقية، وإذا خلصت تطيح.</li>
+          <li>اللعبة 30 مرحلة: الأولى 10 طوبات، وكل مرحلة تزيد عشر لين 300. آخر طوبة في المرحلة هرم أو قبة تقفل البرج.</li>
+          <li id="rule3">مرحلتك محفوظة: إذا طاح البرج تعيد نفس المرحلة لين تقفلها.</li>
         </ol>
+        <div class="row" id="resumeRow" hidden>
+          <p id="resume"></p>
+          <button class="link" id="resetBtn" type="button">ارجع للمرحلة الأولى</button>
+        </div>
         <button class="btn" id="startBtn" type="button">ابدأ</button>
       </div>
     </div>
@@ -245,12 +252,20 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
     mode: 'idle',                   // idle | aim | drop | fall | stage | over
     players: 1, turn: 0, score: 0, loser: 0,
     stage: 0, count: 0, stageT: 0,   // which stage, bricks placed in it, pause before its panel shows
+    hinted: false, wonAll: false,
     blocks: [], mover: null, debris: [],
     cam: 0, t: 0, lean: 0, landT: 0, fallT: 0, reason: 'topple'
   };
 
-  // Bricks needed to close each stage: 15, then 10 more each time, and the last one is 150. The closing brick is a pyramid or a dome.
-  var STAGES = [15, 25, 35, 45, 55, 65, 75, 85, 95, 105, 115, 125, 135, 145, 150];
+  // Bricks needed to close each stage: thirty stages, ten more each time, so 10 up to 300. The closing brick is a pyramid or a dome.
+  var STAGES = [];
+  for (var si = 1; si <= 30; si++) STAGES.push(si * 10);
+
+  // The stage a solo player has reached stays on this phone until they close it; a fallen tower repeats the same stage.
+  var saved = 0;
+  try { saved = Math.max(0, Math.min(STAGES.length - 1, parseInt(localStorage.getItem('tower-stage'), 10) || 0)); } catch (e) {}
+  function saveStage(i) { saved = i; try { localStorage.setItem('tower-stage', String(i)); } catch (e) {} }
+  function idleStage() { return (pending || 1) === 1 ? Math.min(saved, STAGES.length - 1) : 0; }
 
   function widthFor(n) { return Math.max(18, 34 - 0.5 * (n - 1)); }
   function speedFor(n) { return Math.min(130, 46 + 2.6 * (n - 1)); }
@@ -283,23 +298,38 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
       { x: 54, w: 33, p: 2 }, { x: 50, w: 32.5, p: 3 }
     ];
     S.mover = { x: 34, w: 32, dir: 1, speed: 30, p: 0, gap: 1.6 * BH, vy: 0 };
-    S.debris = []; S.mode = 'idle'; S.score = 0; S.turn = 0; S.stage = 0; S.count = 0;
+    S.debris = []; S.mode = 'idle'; S.score = 0; S.turn = 0; S.stage = idleStage(); S.count = 0; S.wonAll = false;
     $('stageOverlay').hidden = true;
     S.lean = stability(S.blocks).lean;
-    syncHud();
+    syncHud(); syncResume();
   }
 
-  function newGame() {
+  // Start (or repeat) one stage with an empty site.
+  function startStage(i) {
+    S.stage = i; S.count = 0; S.score = 0; S.wonAll = false;
     S.blocks = [{ x: 50, w: 34, p: -1 }];
-    S.debris = []; S.turn = 0; S.score = 0; S.lean = 0; S.landT = 0; S.stage = 0; S.count = 0; S.cam = 0;
+    S.debris = []; S.lean = 0; S.landT = 0; S.cam = 0;
     $('startOverlay').hidden = true; $('overOverlay').hidden = true; $('stageOverlay').hidden = true;
-    spawn(); syncHud();
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    spawn(); syncHud();
+  }
+  function beginMatch() { S.players = pending; S.turn = 0; startStage(idleStage()); }
+  function again() {
+    if (S.wonAll) { S.turn = 0; startStage(0); return; }
+    S.turn = S.players > 1 ? (S.loser + 1) % S.players : 0;
+    startStage(S.stage);
+  }
+
+  function syncResume() {
+    var show = (pending || 1) === 1 && saved > 0;
+    $('resumeRow').hidden = !show;
+    if (show) $('resume').textContent = 'بتكمل من المرحلة ' + (saved + 1) + ' (' + STAGES[saved] + ' طوبة).';
+    $('resetBtn').textContent = 'ارجع للمرحلة الأولى'; resetArmed = false;
   }
 
   function drop() {
     if (S.mode !== 'aim') return;
-    S.mode = 'drop';
+    S.mode = 'drop'; S.hinted = true;
     $('hint').hidden = true;
   }
 
@@ -310,7 +340,7 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
     var res = stability(S.blocks);
     S.lean = Math.max(-1, Math.min(1, res.lean));
     if (res.fail) { topple(res.fail.pivot, res.fail.dir); return; }
-    S.score++; S.count++;
+    S.count++; S.score = S.count;
     if (S.score > best) { best = S.score; try { localStorage.setItem('tower-best', String(best)); } catch (e) {} }
     if (m.cap) { stageDone(); return; }
     tone(150 + Math.min(40, S.count) * 6, 0.12, 'triangle', 0.2, -60);
@@ -318,9 +348,11 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
     spawn(); syncHud();
   }
 
-  // The closing brick sat safely: hold for a moment so it can be seen, then offer the next stage (or the ending).
+  // The closing brick sat safely: the next stage is now the player's, even if they leave. Hold a moment, then offer it.
   function stageDone() {
     S.mode = 'stage'; S.stageT = 0.9;
+    var last = S.stage === STAGES.length - 1;
+    if (S.players === 1) saveStage(last ? 0 : S.stage + 1);
     tone(523, 0.12, 'triangle', 0.18, 0);
     setTimeout(function () { tone(659, 0.12, 'triangle', 0.18, 0); }, 120);
     setTimeout(function () { tone(784, 0.26, 'triangle', 0.18, 0); }, 240);
@@ -328,28 +360,22 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
   }
   function stagePanel() {
     if (S.stage === STAGES.length - 1) {
-      S.mode = 'over';
+      S.mode = 'over'; S.wonAll = true;
       $('overTitle').textContent = 'ختمت اللعبة!';
-      $('overMsg').textContent = S.players === 1
-        ? 'قفلت كل المراحل ورصّيت ' + S.score + ' طوبة.'
-        : 'قفلتوا كل المراحل مع بعض ومحد طيّح البرج. المجموع ' + S.score + ' طوبة.';
+      $('overMsg').textContent = (S.players === 1 ? 'قفلت كل المراحل' : 'قفلتوا كل المراحل مع بعض') + ' (' + STAGES.length + ' مرحلة)، وآخر برج فيه ' + STAGES[S.stage] + ' طوبة.';
+      $('againBtn').textContent = 'العب من الأول';
       $('overOverlay').hidden = false; $('againBtn').focus();
       return;
     }
     $('stageTitle').textContent = 'قفلت المرحلة ' + (S.stage + 1) + '!';
     $('stageMsg').textContent = 'المرحلة ' + (S.stage + 2) + ' فيها ' + STAGES[S.stage + 1] + ' طوبة، والبرج يبدأ من جديد.' +
-      (S.players > 1 ? ' الدور على ' + NAMES[(S.turn + 1) % S.players] + '.' : '');
+      (S.players > 1 ? ' الدور على ' + NAMES[(S.turn + 1) % S.players] + '.' : ' تقدّمك محفوظ.');
     $('stageOverlay').hidden = false; $('stageBtn').focus();
   }
   function nextStage() {
     if (S.mode !== 'stage') return;
-    S.stage++; S.count = 0;
-    S.blocks = [{ x: 50, w: 34, p: -1 }];
-    S.debris = []; S.lean = 0; S.landT = 0; S.cam = 0;
     S.turn = (S.turn + 1) % S.players;
-    $('stageOverlay').hidden = true;
-    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-    spawn(); syncHud();
+    startStage(S.stage + 1);
   }
 
   // The brick finished one more side-to-side move. Warn on the last three, and let it fall when none are left.
@@ -392,17 +418,19 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
 
   function finish() {
     S.mode = 'over';
-    var msg, n = S.score, st = S.stage + 1, late = S.reason === 'timeout';
+    var msg, st = S.stage + 1, late = S.reason === 'timeout';
     var how = late ? ' ما نزّل الطوبة قبل تخلص حركاتها' : ' طيّح البرج';
+    var where = ' في المرحلة ' + st + ' عند الطوبة ' + (S.count + 1) + ' من ' + STAGES[S.stage];
     $('overTitle').textContent = late ? 'طاحت الطوبة!' : 'طاح البرج!';
     if (S.players === 1) {
-      msg = (late ? 'خلصت حركات الطوبة قبل تنزّلها. ' : '') + 'وصلت المرحلة ' + st + ' ومجموعك ' + n + ' طوبة.' + (n > 0 && n === best ? ' هذا أعلى رقم عندك!' : '');
+      msg = (late ? 'خلصت حركات الطوبة قبل تنزّلها. ' : '') + 'وقفت' + where + '. المرحلة محفوظة لك، أعدها لين تقفلها.';
     } else if (S.players === 2) {
-      msg = 'الفايز: ' + NAMES[1 - S.loser] + '. ' + NAMES[S.loser] + how + ' في المرحلة ' + st + '، والمجموع ' + n + ' طوبة.';
+      msg = NAMES[S.loser] + how + where + '. الفايز بالجولة: ' + NAMES[1 - S.loser] + '.';
     } else {
-      msg = NAMES[S.loser] + how + ' في المرحلة ' + st + '، والباقين فازوا. المجموع ' + n + ' طوبة.';
+      msg = NAMES[S.loser] + how + where + '، والباقين فازوا بالجولة.';
     }
     $('overMsg').textContent = msg;
+    $('againBtn').textContent = 'أعد المرحلة';
     $('overOverlay').hidden = false;
     syncHud();
     $('againBtn').focus();
@@ -410,7 +438,7 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
 
   function syncHud() {
     $('height').textContent = S.count + '/' + STAGES[S.stage];
-    $('stageNum').textContent = S.stage + 1;
+    $('stageNum').textContent = (S.stage + 1) + '/' + STAGES.length;
     $('best').textContent = best;
     var playing = S.mode === 'aim' || S.mode === 'drop' || S.mode === 'fall';
     $('live').hidden = !playing;
@@ -420,7 +448,7 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
       $('turnDot').style.background = 'var(--p' + (S.turn + 1) + ')';
     }
     $('bob').style.left = (50 + S.lean * 50) + '%';
-    $('hint').hidden = !(S.mode === 'aim' && S.score === 0);
+    $('hint').hidden = !(S.mode === 'aim' && !S.hinted);
   }
 
   /* ---------- update ---------- */
@@ -616,18 +644,23 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
     if (S.mode === 'aim') { e.preventDefault(); drop(); }
   });
 
-  var pending = 1;
+  var pending = 1, resetArmed = false;
   $('seg').addEventListener('click', function (e) {
     var b = e.target.closest('button'); if (!b) return;
     pending = parseInt(b.getAttribute('data-n'), 10);
     var all = $('seg').querySelectorAll('button');
     for (var i = 0; i < all.length; i++) all[i].setAttribute('aria-pressed', all[i] === b ? 'true' : 'false');
     $('rule3').textContent = pending === 1
-      ? 'حاول تقفل أكثر عدد من المراحل.'
-      : 'كل واحد يحط طوبة في دوره، واللي يطيّح البرج يخسر.';
+      ? 'مرحلتك محفوظة: إذا طاح البرج تعيد نفس المرحلة لين تقفلها.'
+      : 'كل واحد يحط طوبة في دوره. اللي يطيّح البرج يخسر الجولة وتنعاد نفس المرحلة. تبدأون من المرحلة الأولى.';
+    demo();
   });
-  $('startBtn').addEventListener('click', function () { S.players = pending; newGame(); });
-  $('againBtn').addEventListener('click', newGame);
+  $('resetBtn').addEventListener('click', function () {
+    if (!resetArmed) { resetArmed = true; this.textContent = 'متأكد؟ اضغط مرة ثانية'; return; }
+    saveStage(0); demo();
+  });
+  $('startBtn').addEventListener('click', beginMatch);
+  $('againBtn').addEventListener('click', again);
   $('stageBtn').addEventListener('click', nextStage);
   $('changeBtn').addEventListener('click', function () {
     $('overOverlay').hidden = true; $('startOverlay').hidden = false;
@@ -680,7 +713,7 @@ button:focus-visible{outline:3px solid var(--fg);outline-offset:2px}
     $('installClose').addEventListener('click', function () { $('installOverlay').hidden = true; btn.focus(); });
   })();
 
-  if (location.hash === '#t') window.__tw = { S: S, STAGES: STAGES, drop: function (off) {
+  if (location.hash === '#t') window.__tw = { S: S, STAGES: STAGES, saved: function () { return saved; }, drop: function (off) {
     if (S.mode !== 'aim') return false;
     S.mover.x = S.blocks[S.blocks.length - 1].x + (off || 0); drop(); return true;
   } };
